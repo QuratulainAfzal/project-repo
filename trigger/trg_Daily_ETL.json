@@ -1,0 +1,33 @@
+{
+	"name": "trg_Daily_ETL",
+	"properties": {
+		"annotations": [],
+		"runtimeState": "Started",
+		"pipelines": [
+			{
+				"pipelineReference": {
+					"referenceName": "PL_Load_Data",
+					"type": "PipelineReference"
+				}
+			}
+		],
+		"type": "ScheduleTrigger",
+		"typeProperties": {
+			"recurrence": {
+				"frequency": "Day",
+				"interval": 1,
+				"startTime": "2024-10-29T13:27:00",
+				"endTime": "2024-10-31T13:27:00",
+				"timeZone": "Pakistan Standard Time",
+				"schedule": {
+					"minutes": [
+						35
+					],
+					"hours": [
+						18
+					]
+				}
+			}
+		}
+	}
+}

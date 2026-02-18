@@ -1,0 +1,608 @@
+{
+	"name": "PL_Load_Data_Parquet",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get List of Tables",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Set Batch ID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "\nselect * from dbo.metadata_tables\nwhere load_table = 'Yes'\n",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_ASQL_Training_SRC",
+						"type": "DatasetReference",
+						"parameters": {
+							"src_schema": "a",
+							"src_table": "b"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach1",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Get List of Tables",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Get List of Tables').output.value",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"batchCount": 5,
+					"activities": [
+						{
+							"name": "Copy Data",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "Set Start Time",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								},
+								{
+									"activity": "Set Max Watermark Value",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@concat('select * from ', item().src_schema_name, '.', item().src_table_name, ' where Created_on > ''', variables('watermark_val'), '''')",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "ParquetSink",
+									"storeSettings": {
+										"type": "AzureBlobFSWriteSettings"
+									},
+									"formatSettings": {
+										"type": "ParquetWriteSettings"
+									}
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "DS_ASQL_Training_SRC",
+									"type": "DatasetReference",
+									"parameters": {
+										"src_schema": {
+											"value": "@item().src_schema_name",
+											"type": "Expression"
+										},
+										"src_table": {
+											"value": "@item().src_table_name",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "DS_ADLS_GEN2_PARQUET",
+									"type": "DatasetReference",
+									"parameters": {
+										"file_name": {
+											"value": "@item().dst_table_name",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "Set Start Time",
+							"type": "SetVariable",
+							"dependsOn": [],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "start_time",
+								"value": {
+									"value": "@utcNow()",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Set End Time",
+							"type": "SetVariable",
+							"dependsOn": [
+								{
+									"activity": "Copy Data",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "end_time",
+								"value": {
+									"value": "@utcNow()",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Success Log",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Set End Time",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[dbo].[sp_log_insert]",
+								"storedProcedureParameters": {
+									"batchid": {
+										"value": {
+											"value": "@variables('batch_id')",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"duration": {
+										"value": {
+											"value": "@activity('Copy Data').output.copyDuration",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"end_time": {
+										"value": {
+											"value": "@variables('end_time')",
+											"type": "Expression"
+										},
+										"type": "Datetime"
+									},
+									"pipeline_id": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"pipeline_name": {
+										"value": {
+											"value": "@pipeline().Pipeline",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"start_time": {
+										"value": {
+											"value": "@variables('start_time')",
+											"type": "Expression"
+										},
+										"type": "Datetime"
+									},
+									"status": {
+										"value": "Success",
+										"type": "String"
+									},
+									"status_message": {
+										"value": "Pipeline Executed Successfully",
+										"type": "String"
+									},
+									"table_name": {
+										"value": {
+											"value": "@item().src_table_name",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_ASQL_Training",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Failure log",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Copy Data",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[dbo].[sp_log_insert]",
+								"storedProcedureParameters": {
+									"batchid": {
+										"value": {
+											"value": "@variables('batch_id')",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"duration": {
+										"value": null,
+										"type": "Int32"
+									},
+									"end_time": {
+										"value": {
+											"value": "@variables('end_time')",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"pipeline_id": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"pipeline_name": {
+										"value": {
+											"value": "@pipeline().Pipeline",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"start_time": {
+										"value": {
+											"value": "@variables('start_time')",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"status": {
+										"value": "Failed",
+										"type": "String"
+									},
+									"status_message": {
+										"value": {
+											"value": "@replace(activity('Copy Data').output.errors[0].Message, '''','')\n ",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"table_name": {
+										"value": {
+											"value": "@item().src_table_name",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_ASQL_Training",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Get Max Watermark Value",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@concat('select isnull(max(watermark_value), ''1900-01-01'') as watermark_val from dbo.watermark_table\nwhere table_name = ''', item().src_table_name, '''')",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DS_ASQL_Training_SRC",
+									"type": "DatasetReference",
+									"parameters": {
+										"src_schema": "A",
+										"src_table": "B"
+									}
+								}
+							}
+						},
+						{
+							"name": "Set Max Watermark Value",
+							"type": "SetVariable",
+							"dependsOn": [
+								{
+									"activity": "Get Max Watermark Value",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "watermark_val",
+								"value": {
+									"value": "@activity('Get Max Watermark Value').output.firstRow.watermark_val",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Get Highest Watermark",
+							"type": "Lookup",
+							"state": "Inactive",
+							"onInactiveMarkAs": "Succeeded",
+							"dependsOn": [
+								{
+									"activity": "Copy Data",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@concat('select ''', item().src_table_name, ''' as table_name, max(Created_on) as high_watermark from ', item().dst_schema_name, '.', item().dst_table_name)",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DS_ASQL_Training_SRC",
+									"type": "DatasetReference",
+									"parameters": {
+										"src_schema": "A",
+										"src_table": "B"
+									}
+								}
+							}
+						},
+						{
+							"name": "SP Watermark",
+							"type": "SqlServerStoredProcedure",
+							"state": "Inactive",
+							"onInactiveMarkAs": "Succeeded",
+							"dependsOn": [
+								{
+									"activity": "Get Highest Watermark",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[dbo].[sp_watermark_insert]",
+								"storedProcedureParameters": {
+									"table_name": {
+										"value": {
+											"value": "@activity('Get Highest Watermark').output.firstRow.table_name",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"watermark_val": {
+										"value": {
+											"value": "@activity('Get Highest Watermark').output.firstRow.high_watermark",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_ASQL_Training",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Get Batch ID",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "select isnull(max(batch_id), 0) + 1 as batch_id from dbo.log_table",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_ASQL_Training_SRC",
+						"type": "DatasetReference",
+						"parameters": {
+							"src_schema": "a",
+							"src_table": "b"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set Batch ID",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Batch ID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "batch_id",
+					"value": {
+						"value": "@activity('Get Batch ID').output.firstRow.batch_id",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Execute Silver Layer",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "ForEach1",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Users/qain@calrom.com/Project/Silver Layer Transformation",
+					"baseParameters": {
+						"batch_id": {
+							"value": "@string(variables('batch_id'))",
+							"type": "Expression"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_Databricks",
+					"type": "LinkedServiceReference"
+				}
+			}
+		],
+		"variables": {
+			"batch_id": {
+				"type": "Integer"
+			},
+			"start_time": {
+				"type": "String"
+			},
+			"end_time": {
+				"type": "String"
+			},
+			"watermark_val": {
+				"type": "String"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2025-05-30T14:34:12Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

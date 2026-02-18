@@ -1,0 +1,31 @@
+{
+	"name": "DS_ASQL_Training_DST",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_ASQL_Training",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"dst_schema": {
+				"type": "string"
+			},
+			"dst_table": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [],
+		"typeProperties": {
+			"schema": {
+				"value": "@dataset().dst_schema",
+				"type": "Expression"
+			},
+			"table": {
+				"value": "@dataset().dst_table",
+				"type": "Expression"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

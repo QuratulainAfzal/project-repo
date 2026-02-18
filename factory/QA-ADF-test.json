@@ -1,0 +1,9 @@
+{
+	"name": "QA-ADF-test",
+	"location": "uksouth",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "ad5f8d4d-ecfa-4c59-8dbf-f952af5a7a8a",
+		"tenantId": "c65b0911-b87d-48eb-8e69-b0fe84e8c59f"
+	}
+}
